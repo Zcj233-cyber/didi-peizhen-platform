@@ -4,15 +4,15 @@
 
 ## 📸 功能截图
 
-### 📱 H5 移动端
+### 📱 H5 移动端（用户端）
 
-| 首页 | 智能分诊(输入症状) | 分诊结果(科室推荐) | AI客服聊天 |
+| 🏠 首页（城市定位+天气+AI分诊+医院列表） | 🤖 智能分诊（填写症状） | 📋 分诊推荐结果（科室+医院+陪诊师） | 💬 AI客服对话（自动问答） |
 |------|-------------------|-------------------|-----------|
 | ![H5首页](screenshots/h5-home.png) | ![分诊输入](screenshots/h5-triage-input.png) | ![分诊结果](screenshots/h5-triage-result.png) | ![聊天](screenshots/h5-chat.png) |
 
-### 🖥 后台管理
+### 🖥 后台管理（管理员端）
 
-| 控制台 | 运营数据助手 | FAQ知识库 | 订单管理 |
+| 📊 控制台（业务总览） | 🤖 运营数据助手（AI对话查数据） | 📚 FAQ知识库（问题管理） | 📦 订单管理（状态筛选） |
 |--------|------------|----------|---------|
 | ![控制台](screenshots/admin-dashboard.png) | ![运营数据助手](screenshots/admin-agent-overview.png) | ![FAQ](screenshots/admin-faq.png) | ![订单管理](screenshots/admin-order.png) |
 
