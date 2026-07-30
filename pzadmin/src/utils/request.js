@@ -2,8 +2,11 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 
 const http = axios.create({
-    baseURL: 'https:/v3pz.itndedu.com/v3pz',
-    timeout: 10000
+    baseURL: 'http://localhost:2306/v3pz',
+    timeout: 10000,
+    headers: {
+        "terminal": "admin"
+    }
 })
 
 // 添加请求拦截器
@@ -23,24 +26,23 @@ http.interceptors.request.use(function (config) {
 
 // 添加响应拦截器
 http.interceptors.response.use(function (response) {
-    // console.log(response)
-    // 对接口异常的数据，给用户提示
-    if (response.data.code === -1) {
-        ElMessage.warning(response.data.message)
-        console.log(response.data.message)
-    }
-    if (response.data.code === -2) {
-        localStorage.removeItem('pz_token')
-        localStorage.removeItem('pz_userInfo')
-        localStorage.removeItem('pz_v3pz')
-        window.location.href = window.location.origin
-        ElMessage.error(response.data.message)
-        console.log(response.data.message)
+    const code = response.data.code
+    const message = response.data.message || response.data.msg || '请求失败'
+    // 后端成功码为 10000
+    if (code !== 10000) {
+        // token 相关错误 → 跳转登录页
+        if (code === -2 || message.includes('token')) {
+            localStorage.removeItem('pz_token')
+            localStorage.removeItem('pz_userInfo')
+            localStorage.removeItem('pz_v3pz')
+            ElMessage.error(message)
+            window.location.href = window.location.origin
+        } else {
+            ElMessage.warning(message)
+        }
     }
     return response;
 }, function (error) {
-    // 超出 2xx 范围的状态码都会触发该函数。
-    // 对响应错误做点什么
     return Promise.reject(error);
 });
 

@@ -9,6 +9,7 @@ import * as ElementPlusIconsVue from '@element-plus/icons-vue'
 import store from './store'
 import PanelHead from './components/PanelHead.vue'
 
+// 清除旧缓存，避免菜单冲突
 const localData = localStorage.getItem('pz_v3pz')
 if(localData) {
   try {
@@ -17,7 +18,7 @@ if(localData) {
       store.commit('dynamicMenu', parsed.menu.routerList)
       if(store.state.menu.routerList && Array.isArray(store.state.menu.routerList)) {
         store.state.menu.routerList.forEach(item => {
-          router.addRoute('main', item)
+          try { router.addRoute('main', item) } catch(e) {}
         })
       }
     }
@@ -28,9 +29,17 @@ if(localData) {
 
 router.beforeEach((to, from) => {
   const token = localStorage.getItem('pz_token')
-  if(!token && to.path !== '/login'){
+  const localData = localStorage.getItem('pz_v3pz')
+  let hasMenuData = false
+  if (localData) {
+    try {
+      const parsed = JSON.parse(localData)
+      hasMenuData = parsed.menu?.routerList?.length > 0
+    } catch (e) {}
+  }
+  if (!token && to.path !== '/login') {
     return '/login'
-  } else if(token && to.path === '/login'){
+  } else if (token && to.path === '/login' && hasMenuData) {
     return '/'
   } else {
     return true

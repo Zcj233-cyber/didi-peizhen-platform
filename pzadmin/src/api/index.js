@@ -63,3 +63,51 @@ export const adminOrder = (params) => {
 export const updateOrder = (data) => {
     return request.post("/update/order", data)
 }
+
+// ==================== AI Agent ====================
+
+export const agentOverview = () => {
+    return request.get("/agent/admin/overview")
+}
+
+export const agentBusinessStats = () => {
+    return request.get("/agent/admin/business/stats")
+}
+
+export const agentFaqList = (params) => {
+    return request.get("/agent/admin/faq/list", { params })
+}
+
+export const agentFaqCreate = (data) => {
+    return request.post("/agent/admin/faq/create", data)
+}
+
+export const agentFaqUpdate = (data) => {
+    return request.post("/agent/admin/faq/update", data)
+}
+
+export const agentFaqDelete = (data) => {
+    return request.post("/agent/admin/faq/delete", data)
+}
+
+export const agentAdminChat = (data) => {
+    return request.post("/agent/chat", data)
+}
+
+// ==================== Admin 智能运营中心 ====================
+
+export const adminDashboard = () => {
+    return request.get("/agent/admin/dashboard")
+}
+
+export const adminDashboardAlerts = () => {
+    return request.get("/agent/admin/dashboard/alerts")
+}
+
+export const adminDashboardAnalytics = (params) => {
+    return request.get("/agent/admin/dashboard/analytics", { params })
+}
+
+export const adminDashboardReport = (params) => {
+    return request.get("/agent/admin/dashboard/report", { params })
+}

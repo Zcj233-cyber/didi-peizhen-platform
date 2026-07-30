@@ -23,7 +23,7 @@
         <el-form-item prop="userName">
           <el-input
             v-model="loginForm.userName"
-            placeholder="手机号"
+            placeholder="账号"
             :prefix-icon="UserFilled"
           ></el-input>
         </el-form-item>
@@ -193,19 +193,28 @@ const submitForm = async (formEl) => {
             localStorage.setItem("pz_token", data.data.token);
             localStorage.setItem(
               "pz_userInfo",
-              JSON.stringify(data.data.userInfo),
+              JSON.stringify(data.data.userInfo || { name: '' }),
             );
             loginForm.userName = "";
             loginForm.passWord = "";
             loginForm.code = "";
-            menuPermissions().then(({ data }) => {
-              console.log(data);
-              store.commit("dynamicMenu", data.data);
-              console.log(routerList);
-              toRaw(routerList.value).forEach((item) => {
-                router.addRoute("main", item);
-              });
-              router.push("/");
+            menuPermissions().then((res) => {
+              const permData = res.data;
+              if (permData.code !== 10000) {
+                ElMessage.error(permData.message || "获取菜单权限失败");
+                return;
+              }
+              store.commit("dynamicMenu", permData.data);
+              const list = toRaw(store.state.menu.routerList);
+              if (list && list.length) {
+                list.forEach((item) => {
+                  try { router.addRoute("main", item); } catch(e) {}
+                });
+              }
+              // 手动写入 localStorage 确保持久化
+              const state = store.state;
+              localStorage.setItem("pz_v3pz", JSON.stringify(state));
+              setTimeout(() => router.push("/"), 100);
             });
           }
         });

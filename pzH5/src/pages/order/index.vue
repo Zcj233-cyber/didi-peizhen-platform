@@ -27,6 +27,9 @@
         </van-col>
     </van-row>
     <div class="bottom-text">没有更多了</div>
+    <!-- AI智能客服悬浮球 -->
+    <van-floating-bubble icon="chat-o" @click="router.push('/agent/chat')"
+      :style="{ bottom: '80px', right: '20px' }" />
   </div>
 </template>
 

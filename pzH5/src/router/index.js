@@ -7,16 +7,18 @@ import User from '../pages/user/index.vue'
 import Login from '../pages/login/index.vue'
 import createOrder from '../pages/createOrder/index.vue'
 import detail from '../pages/detail/index.vue'
+import AgentChat from '../pages/agent/chat/index.vue'
+import AgentPlanning from '../pages/agent/planning/index.vue'
 
 const routes = [
-  { 
+  {
     path: '/',
     component: Layout,
     redirect: '/home',
     children: [
       {
         path: 'home',
-        meta: { 
+        meta: {
           icon: 'home-o',
           name: '首页'
         },
@@ -24,7 +26,7 @@ const routes = [
       },
       {
         path: 'order',
-        meta: { 
+        meta: {
           icon: 'orders-o',
           name: '订单'
         },
@@ -44,7 +46,7 @@ const routes = [
     path: '/login',
     name:"login",
     component: Login
-    
+
   },
   {
     path: '/createOrder',
@@ -55,6 +57,16 @@ const routes = [
     path: '/detail',
     name:"detail",
     component: detail
+  },
+  {
+    path: '/agent/chat',
+    name: 'agentChat',
+    component: AgentChat
+  },
+  {
+    path: '/agent/planning',
+    name: 'agentPlanning',
+    component: AgentPlanning
   },
 ]
 

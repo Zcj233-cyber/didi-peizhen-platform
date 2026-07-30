@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl *)",
+      "Bash(pip *)",
+      "Bash(python *)",
+      "Bash(mysql *)",
+      "Bash(netstat *)",
+      "Bash(taskkill *)",
+      "Bash(wmic *)",
+      "Bash(powershell *)",
+      "Bash(cmd *)",
+      "Bash(kill *)",
+      "Bash(nohup *)",
+      "Bash(ps *)",
+      "Bash(npm *)",
+      "Bash(git *)",
+      "Bash(node *)"
+    ]
+  }
+}

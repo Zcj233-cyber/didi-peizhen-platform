@@ -19,6 +19,7 @@ export default defineConfig({
       resolvers: [VantResolver()],
     }),
   ],
+  base:'/-/',
   css: {
     preprocessorOptions: {
       less: {

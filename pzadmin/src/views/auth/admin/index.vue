@@ -31,16 +31,15 @@
         </template>
       </el-table-column>
     </el-table>
-    <div class="pagination-info">
+    <div class="pagination-info" style="display:flex;justify-content:space-between;align-items:center;padding:10px">
+      <span style="font-size:13px;color:#999">显示第 {{ (paginationData.pageNum-1)*paginationData.pageSize+1 }}-{{ Math.min(paginationData.pageNum*paginationData.pageSize, tableData.total) }} 条，共 {{ tableData.total }} 条</span>
       <el-pagination
-        :model:current-page="paginationData.pageNum"
+        :current-page="paginationData.pageNum"
         :page-size="paginationData.pageSize"
-        :background="false"
-        size="small"
-        layout="total, prev, pager, next"
+        layout="prev, pager, next"
         :total="tableData.total"
-        @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
+        @size-change="v=>{paginationData.pageSize=v;getListData()}"
+        @current-change="v=>{paginationData.pageNum=v;getListData()}"
       />
     </div>
     <el-dialog

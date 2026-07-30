@@ -42,6 +42,15 @@
         <van-cell v-for="(item,key) in makeInfo" :key="key" :title="item" :value="formatData(key)" />
       </van-cell-group>
 
+      <!-- 导航到院 -->
+      <van-cell-group class="card" v-if="detailData.hospital_location && detailData.hospital_location.latitude">
+        <div class="header-text">医院导航</div>
+        <van-cell title="医院地址" :value="detailData.hospital_location.address || detailData.hospital_name" />
+        <van-button type="primary" block class="nav-btn" @click="navigateToHospital">
+          <van-icon name="location-o" /> 导航到 {{ detailData.hospital_name }}
+        </van-button>
+      </van-cell-group>
+
       <van-cell-group class="card">
         <div class="header-text">订单信息</div>
         <van-cell v-for="(item,key) in orderInfo" :key="key" :title="item" :value="formatData(key)" />
@@ -54,6 +63,8 @@
         <div>请使用本人微信扫描二维码</div>
       </van-dialog>
     </div>
+    <van-floating-bubble icon="chat-o" @click="router.push('/agent/chat')"
+      :style="{ bottom: '80px', right: '20px' }" />
   </div>
 </template>
 
@@ -125,6 +136,15 @@ function formatTimestamp(timestamp) {
   return `${year}-${month}-${day}`;
 }
 
+const navigateToHospital = () => {
+  const loc = detailData.hospital_location || {}
+  const name = encodeURIComponent(detailData.hospital_name || '医院')
+  if (loc.longitude && loc.latitude) {
+    const url = `https://uri.amap.com/navigation?to=${loc.longitude},${loc.latitude},${name}&mode=car&coordinate=gaode`
+    window.open(url, '_blank')
+  }
+}
+
 onMounted(async () => {
   const { data } = await proxy.$api.orderDetail({ oid: route.query.oid });
   Object.assign(detailData, data.data);
@@ -168,6 +188,7 @@ const closeCode = () => {
     border-left: 4px solid red;
   }
 }
+.nav-btn { margin: 10px; width: auto; border-radius: 8px; }
 .dzf {
   padding: 20px;
   .text1 {

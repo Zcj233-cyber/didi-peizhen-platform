@@ -50,8 +50,13 @@ const router = useRouter();
 const route = useRoute();
 // console.log(route)
 
-const userInfo = JSON.parse(localStorage.getItem('pz_userInfo'))
-// console.log(userInfo)
+let userInfo = { name: '' }
+try {
+  const raw = localStorage.getItem('pz_userInfo')
+  if (raw) userInfo = JSON.parse(raw)
+} catch (e) {
+  userInfo = { name: '' }
+}
 
 const closeTab = (item, index) => {
   store.commit("closeMenu", item);

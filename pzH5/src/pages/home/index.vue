@@ -1,12 +1,58 @@
 <template>
   <div>
     <div class="header">
-      <div class="header-left">中部地区<van-icon name="arrow" /></div>
+      <div class="header-left" @click="showCityPicker = true">{{ currentCity }}<van-icon name="arrow-down" /></div>
       <van-search
         v-model="searchValue"
         placeholder="请输入搜索关键词"
         shape="round"
       />
+    </div>
+    <!-- 城市选择器 -->
+    <van-action-sheet v-model:show="showCityPicker" :actions="cityActions" @select="onCitySelect"
+      cancel-text="取消" close-on-click-action />
+
+    <!-- 天气出行提示 - 点击展开 -->
+    <div class="weather-bar" v-if="weatherData.condition" @click="showWeather = !showWeather">
+      <van-icon :name="weatherIcon" class="weather-icon" />
+      <div class="weather-info">
+        <span class="weather-temp">{{ weatherData.temperature }}°C</span>
+        <span class="weather-cond">{{ weatherData.condition }}</span>
+      </div>
+      <div class="weather-advice">{{ weatherData.advice ? weatherData.advice.split('；')[0] : '点击查看出行建议' }}</div>
+      <van-icon :name="showWeather ? 'arrow-up' : 'arrow'" color="#ccc" size="14" />
+    </div>
+    <!-- 天气详情展开 -->
+    <div class="weather-detail" v-if="showWeather && weatherData.condition">
+      <div class="weather-detail-content">
+        <div class="wd-row">
+          <span class="wd-label">🌡 温度</span>
+          <span class="wd-value">{{ weatherData.temperature }}°C</span>
+        </div>
+        <div class="wd-row">
+          <span class="wd-label">☁️ 天气</span>
+          <span class="wd-value">{{ weatherData.condition }}</span>
+        </div>
+        <div class="wd-row" v-if="weatherData.wind">
+          <span class="wd-label">💨 风力</span>
+          <span class="wd-value">{{ weatherData.wind }}</span>
+        </div>
+        <div class="wd-row" v-if="weatherData.humidity">
+          <span class="wd-label">💧 湿度</span>
+          <span class="wd-value">{{ weatherData.humidity }}</span>
+        </div>
+        <div class="wd-divider"></div>
+        <div class="wd-advice">{{ weatherData.advice }}</div>
+      </div>
+    </div>
+    <!-- AI智能就医规划入口 -->
+    <div class="ai-triage-entry planning-entry" @click="router.push('/agent/planning')">
+      <van-image width="40" height="40" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%23667eea'/%3E%3Ctext x='50' y='68' text-anchor='middle' font-size='45' fill='white'%3E📋%3C/text%3E%3C/svg%3E" />
+      <div class="ai-triage-text">
+        <div class="ai-triage-title">🏥 智能就医规划 <van-tag plain size="small" color="#ff6b35" style="margin-left:4px">NEW</van-tag></div>
+        <div class="ai-triage-desc">分析症状→推荐医院→准备清单→费用预估，一站式攻略</div>
+      </div>
+      <van-icon name="arrow" color="#ccc" />
     </div>
     <van-swipe
       class="my-swipe"
@@ -14,8 +60,13 @@
       indicator-color="white"
       height="170"
     >
-      <van-swipe-item v-for="item in homeData.slides" :key="item.id">
+      <van-swipe-item v-for="item in homeData.slides" :key="item.id" @click="goOrder(item)">
+        <div class="slide-map-btn" @click.stop="viewMap(item)">📍 查看地图</div>
         <van-image :src="item.pic_image_url" />
+        <div class="slide-label" v-if="item.hospital_name">
+          <span>{{ item.hospital_name }}</span>
+          <van-tag v-if="item.hospital_rank" plain size="small">{{ item.hospital_rank }}</van-tag>
+        </div>
       </van-swipe-item>
     </van-swipe>
 
@@ -46,13 +97,27 @@
         <div class="yy-text">
           {{ item.intro }}
         </div>
+        <div class="yy-distance" v-if="item.distance">
+          <van-icon name="location-o" color="#999" /> 距您约 {{ formatDistance(item.distance) }}
+        </div>
+        <div class="yy-actions" v-if="item.latitude && item.longitude">
+          <van-tag plain type="warning" size="small" @click.stop="viewMap(item)" class="nav-tag">
+            <van-icon name="map-marked" /> 查看地图
+          </van-tag>
+          <van-tag plain type="primary" size="small" @click.stop="navigateTo(item)" class="nav-tag">
+            <van-icon name="location-o" /> 导航到院
+          </van-tag>
+          <van-tag plain type="success" size="small" @click.stop="goOrder(item)" class="order-tag">
+            <van-icon name="plus" /> 预约陪诊
+          </van-tag>
+        </div>
       </van-col>
     </van-row>
   </div>
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, getCurrentInstance } from "vue";
+import { ref, reactive, computed, onMounted, getCurrentInstance } from "vue";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
@@ -69,6 +134,25 @@ const homeData = reactive({
   slides: [],
 });
 
+const weatherData = reactive({
+  condition: "",
+  temperature: "",
+  wind: "",
+  humidity: "",
+  advice: "",
+});
+const showWeather = ref(false);
+
+const weatherIcon = computed(() => {
+  const cond = weatherData.condition || "";
+  if (cond.includes("雨")) return "underway-o";
+  if (cond.includes("雪")) return "snow-o";
+  if (cond.includes("云")) return "cloud-upload-o";
+  if (cond.includes("晴")) return "sun-o";
+  if (cond.includes("雾") || cond.includes("霾")) return "eye-o";
+  return "fire-o";
+});
+
 const goOrderTwo = (index) => {
   router.push(`/createOrder?id=${homeData.hospitals[index].id}`)
 };
@@ -77,11 +161,117 @@ const goOrder = (item) => {
   router.push(`/createOrder?id=${item.id}`)
 }
 
+const navigateTo = (item) => {
+  // 使用高德URI scheme唤起APP导航
+  const name = encodeURIComponent(item.name)
+  const url = `https://uri.amap.com/navigation?to=${item.longitude},${item.latitude},${name}&mode=car&coordinate=gaode`
+  window.open(url, '_blank')
+}
+
+const viewMap = (item) => {
+  if (item.map_url) {
+    window.open(item.map_url, '_blank')
+  } else {
+    const name = encodeURIComponent(item.name)
+    window.open(`https://uri.amap.com/marker?position=${item.longitude},${item.latitude}&name=${name}&coordinate=gaode`, '_blank')
+  }
+}
+
+const currentCity = ref("定位中...")
+const userLocation = ref(null)
+const showCityPicker = ref(false)
+const cityActions = ref([])
+const cityList = ref([])
+
+const formatDistance = (km) => {
+  if (!km) return ""
+  if (km < 1) return Math.round(km * 1000) + "m"
+  if (km < 10) return km.toFixed(1) + "km"
+  return Math.round(km) + "km"
+}
+
+const loadData = async (city) => {
+  try {
+    const params = {}
+    if (userLocation.value) {
+      params.lat = userLocation.value.lat
+      params.lng = userLocation.value.lng
+    }
+    if (city) params.city = city
+    const { data } = await proxy.$api.index(params)
+    Object.assign(homeData, data.data)
+    // 更新城市名
+    if (data.data.city) {
+      currentCity.value = data.data.city === "全国" ? (city || "全国") : data.data.city
+    }
+    // 天气
+    try {
+      const { data: wd } = await proxy.$api.getWeather({ city: currentCity.value })
+      if (wd.code === 10000) {
+        weatherData.condition = wd.data.weather.condition
+        weatherData.temperature = wd.data.weather.temperature
+        weatherData.wind = wd.data.weather.wind || ""
+        weatherData.humidity = wd.data.weather.humidity || ""
+        weatherData.advice = wd.data.advice
+      }
+    } catch (e) { /* ignore */ }
+  } catch (e) { /* ignore */ }
+}
+
+const onCitySelect = (item) => {
+  showCityPicker.value = false
+  if (item.name === "全国") {
+    userLocation.value = null
+    currentCity.value = "全国"
+    loadData()
+  } else {
+    loadData(item.name)
+  }
+}
+
 onMounted(async () => {
-  const { data } = await proxy.$api.index();
-  Object.assign(homeData, data.data);
-  console.log(data);
-});
+  // 获取城市列表
+  try {
+    const { data } = await proxy.$api.getCities()
+    if (data.code === 10000) {
+      cityList.value = data.data
+      cityActions.value = [
+        { name: "全国" },
+        ...data.data.map(c => ({ name: c })),
+      ]
+    }
+  } catch (e) { /* ignore */ }
+
+  // 获取位置
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        userLocation.value = {
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+        }
+        loadData()
+      },
+      () => {
+        // 定位失败，默认选第一个城市
+        if (cityList.value.length) {
+          currentCity.value = cityList.value[0]
+          loadData(cityList.value[0])
+        } else {
+          loadData()
+        }
+      },
+      { enableHighAccuracy: false, timeout: 5000 }
+    )
+  } else {
+    if (cityList.value.length) {
+      currentCity.value = cityList.value[0]
+      loadData(cityList.value[0])
+    } else {
+      loadData()
+    }
+  }
+})
 </script>
 
 <style lang="less" scoped>
@@ -125,7 +315,85 @@ onMounted(async () => {
       font-size: 14px;
       color: #999999;
     }
+    .yy-distance {
+      font-size: 12px;
+      color: #999;
+      margin-top: 4px;
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .yy-actions {
+      margin-top: 8px;
+      display: flex;
+      gap: 10px;
+      .nav-tag, .order-tag { padding: 2px 6px; }
+    }
   }
+}
+.slide-map-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: rgba(0,0,0,0.5);
+  color: #fff;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  z-index: 10;
+}
+.slide-label {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.6));
+  color: #fff;
+  font-size: 14px;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.my-swipe { position: relative; }
+.weather-detail { margin: 0 8px 4px; background: #fffdf0; border-radius: 0 0 10px 10px; padding: 8px 12px; border-top: none; }
+.weather-detail-content { font-size: 13px; }
+.wd-row { display: flex; justify-content: space-between; padding: 5px 0; }
+.wd-label { color: #888; }
+.wd-value { color: #333; font-weight: bold; }
+.wd-divider { height: 1px; background: #f0e8d0; margin: 8px 0; }
+.wd-advice { color: #795548; font-size: 12px; line-height: 1.6; }
+.weather-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 8px 4px;
+  padding: 10px 12px;
+  background: linear-gradient(135deg, #fffbe6, #fff8dc);
+  border-radius: 10px;
+  font-size: 13px;
+  .weather-icon { font-size: 22px; color: #f57c00; }
+  .weather-info { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .weather-temp { font-weight: bold; color: #e65100; font-size: 16px; }
+  .weather-cond { color: #666; }
+  .weather-advice { flex: 1; color: #795548; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
+.ai-triage-entry {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 8px;
+  padding: 12px 15px;
+  background: linear-gradient(135deg, #e8f4ff, #f0f8ff);
+  border-radius: 12px;
+  cursor: pointer;
+  .ai-triage-text { flex: 1; }
+  .ai-triage-title { font-size: 15px; font-weight: bold; color: #333; }
+  .ai-triage-desc { font-size: 12px; color: #999; margin-top: 2px; }
+}
+.planning-entry {
+  background: linear-gradient(135deg, #ede7f6, #f3e5f5) !important;
 }
 .bottom-text {
   line-height: 50px;

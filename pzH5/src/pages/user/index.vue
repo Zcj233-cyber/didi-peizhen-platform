@@ -16,7 +16,7 @@
             @click="goOrder(1)"
             width="40"
             height="40"
-            src="../../../public//images/od_10.png"
+            src="/-/images/od_10.png"
           />
           <div>待支付</div>
         </div>
@@ -25,7 +25,7 @@
           <van-image
             width="40"
             height="40"
-            src="../../../public//images/od_20.png"
+            src="/-/images/od_20.png"
           />
           <div>待服务</div>
         </div>
@@ -34,7 +34,7 @@
           <van-image
             width="40"
             height="40"
-            src="../../../public//images/od_30.png"
+            src="/-/images/od_30.png"
           />
           <div>已完成</div>
         </div>
@@ -43,7 +43,7 @@
           <van-image
             width="40"
             height="40"
-            src="../../../public//images/od_40.png"
+            src="/-/images/od_40.png"
           />
           <div>已取消</div>
         </div>
@@ -55,7 +55,7 @@
             <van-image
               width="20"
               height="20"
-              src="../../../public//images/ic_clients.png"
+              src="/-/images/ic_clients.png"
             />
             服务对象管理
           </div>
@@ -69,9 +69,17 @@
             <van-image
               width="20"
               height="20"
-              src="../../../public//images/ic_share.png"
+              src="/-/images/ic_share.png"
             />
             分享转发
+          </div>
+          <div class="text2"><van-icon name="arrow" /></div>
+        </div>
+
+        <div class="foot3" @click="router.push('/agent/chat')">
+          <div class="text1">
+            <van-icon name="chat-o" color="#409eff" size="20" />
+            AI智能客服
           </div>
           <div class="text2"><van-icon name="arrow" /></div>
         </div>
@@ -176,6 +184,12 @@ const logout = () => {
       color: #555;
     }
     .foot1 {
+      border-bottom: 0.5px solid #f5f5f5;
+    }
+    .foot3 {
+      display: flex;
+      justify-content: space-between;
+      color: #555;
       border-bottom: 0.5px solid #f5f5f5;
     }
   }
