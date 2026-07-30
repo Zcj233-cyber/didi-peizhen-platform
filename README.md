@@ -2,6 +2,22 @@
 
 > 基于 AI Agent 的智慧医疗陪诊服务平台，包含 C端用户端（H5）和后台管理系统。
 
+## 📸 功能截图
+
+### 📱 H5 移动端
+
+| 首页 | AI智能分诊 | AI客服聊天 |
+|------|-----------|-----------|
+| ![H5首页](screenshots/h5-home.png) | ![分诊](screenshots/h5-triage.png) | ![聊天](screenshots/h5-chat.png) |
+
+### 🖥 后台管理
+
+| 控制台 | 运营数据助手 | FAQ知识库 | 订单管理 |
+|--------|------------|----------|---------|
+| ![控制台](screenshots/admin-dashboard.png) | ![运营数据助手](screenshots/admin-agent-overview.png) | ![FAQ](screenshots/admin-faq.png) | ![订单管理](screenshots/admin-order.png) |
+
+---
+
 ## 📱 项目概览
 
 一个完整的陪诊服务数字化平台，用户可以通过 H5 端预约陪诊服务、智能分诊、AI客服咨询，管理员通过后台管理系统进行订单、陪护师、权限等全流程管理。系统集成了 **DeepSeek 大模型** 驱动的多 AI Agent 智能体系。
