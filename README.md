@@ -6,9 +6,9 @@
 
 ### 📱 H5 移动端
 
-| 首页 | AI智能分诊 | AI客服聊天 |
-|------|-----------|-----------|
-| ![H5首页](screenshots/h5-home.png) | ![分诊](screenshots/h5-triage.png) | ![聊天](screenshots/h5-chat.png) |
+| 首页 | 智能分诊(输入症状) | 分诊结果(科室推荐) | AI客服聊天 |
+|------|-------------------|-------------------|-----------|
+| ![H5首页](screenshots/h5-home.png) | ![分诊输入](screenshots/h5-triage-input.png) | ![分诊结果](screenshots/h5-triage-result.png) | ![聊天](screenshots/h5-chat.png) |
 
 ### 🖥 后台管理
 

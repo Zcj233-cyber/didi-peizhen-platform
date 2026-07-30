@@ -9,6 +9,7 @@ import createOrder from '../pages/createOrder/index.vue'
 import detail from '../pages/detail/index.vue'
 import AgentChat from '../pages/agent/chat/index.vue'
 import AgentPlanning from '../pages/agent/planning/index.vue'
+import AgentTriage from '../pages/agent/triage/index.vue'
 
 const routes = [
   {
@@ -67,6 +68,11 @@ const routes = [
     path: '/agent/planning',
     name: 'agentPlanning',
     component: AgentPlanning
+  },
+  {
+    path: '/agent/triage',
+    name: 'agentTriage',
+    component: AgentTriage
   },
 ]
 
