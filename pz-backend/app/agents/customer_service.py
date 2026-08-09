@@ -1,11 +1,7 @@
 """智能客服 Agent - FAQ匹配 + LLM增强"""
-import difflib
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from app.database import SessionLocal
-from app.models import Service, Hospital, Order
-from app.agent_models import FAQ
-from typing import Optional
+from app.mcp import client as mcp
 from .base import BaseAgent
 
 
@@ -30,82 +26,40 @@ class CustomerServiceAgent(BaseAgent):
             "7. 如果遇到不清楚的问题，诚实地告诉用户并提供联系方式"
         )
 
-    def _match_faq(self, user_input: str) -> Optional[dict]:
-        """基于关键词+问题相似度匹配FAQ"""
-        db = SessionLocal()
-        try:
-            faqs = db.query(FAQ).filter(FAQ.enabled == 1).all()
-            best_match = None
-            best_score = 0
-
-            for faq in faqs:
-                score = 0.0
-
-                # 维度1：关键词命中（有任一关键词命中即加分）
-                if faq.keywords:
-                    keywords = [k.strip() for k in faq.keywords.split(",")]
-                    keyword_hits = sum(1 for k in keywords if k in user_input)
-                    if keyword_hits > 0:
-                        # 命中关键词越多越好，但至少命中1个就有基础分
-                        score += min(keyword_hits / 2, 1.0) * 0.5
-
-                # 维度2：问题文本相似度
-                seq_score = difflib.SequenceMatcher(
-                    None, user_input, faq.question
-                ).ratio()
-                score += seq_score * 0.5
-
-                if score > best_score:
-                    best_score = score
-                    best_match = faq
-
-            if best_match and best_score >= self.FAQ_SIMILARITY_THRESHOLD:
-                return {
-                    "question": best_match.question,
-                    "answer": best_match.answer,
-                    "category": best_match.category,
-                    "score": round(best_score, 2),
-                }
-            return None
-        finally:
-            db.close()
-
     async def process(self, user_input: str, context: dict = None) -> dict:
         """处理客服咨询 - FAQ优先，LLM补充"""
-        db = SessionLocal()
-        try:
-            # 1. 尝试FAQ匹配
-            faq_match = self._match_faq(user_input)
+        # 1. 尝试FAQ匹配（走 MCP 工具层）
+        faq_results = mcp.search_faq(query=user_input, top_k=5)["results"]
+        faq_match = (
+            faq_results[0]
+            if faq_results and faq_results[0]["score"] >= self.FAQ_SIMILARITY_THRESHOLD
+            else None
+        )
 
-            # 2. 收集业务数据做 grounding
-            services = db.query(Service).all()
-            hospitals = db.query(Hospital).all()
-            user_id = (context or {}).get("user_id", 0)
+        # 2. 收集业务数据做 grounding
+        services = mcp.list_services()["services"]
+        hospitals = mcp.search_hospitals(limit=5)["hospitals"]
+        user_id = (context or {}).get("user_id", 0)
 
-            service_info = "\n".join([
-                f"- {s.name}：¥{s.price}/次"
-                for s in services
-            ]) if services else "暂无服务信息"
+        service_info = "\n".join([
+            f"- {s['name']}：¥{s['price']}/次"
+            for s in services
+        ]) if services else "暂无服务信息"
 
-            hospital_info = "\n".join([
-                f"- {h.name}（{h.rank or '未评级'}）"
-                for h in hospitals[:5]
-            ])
+        hospital_info = "\n".join([
+            f"- {h['name']}（{h['rank'] or '未评级'}）"
+            for h in hospitals[:5]
+        ])
 
-            # 用户订单摘要（仅用于上下文）
-            order_summary = ""
-            if user_id:
-                orders = db.query(Order).filter(
-                    Order.user_id == user_id
-                ).order_by(Order.created_at.desc()).limit(3).all()
-                if orders:
-                    order_summary = "\n".join([
-                        f"- {o.out_trade_no}：{o.hospital_name}，{o.trade_state}"
-                        for o in orders
-                    ])
-
-        finally:
-            db.close()
+        # 用户订单摘要（仅用于上下文）
+        order_summary = ""
+        if user_id:
+            orders = mcp.get_user_orders(user_id=user_id, limit=3)["orders"]
+            if orders:
+                order_summary = "\n".join([
+                    f"- {o['out_trade_no']}：{o['hospital_name']}，{o['trade_state']}"
+                    for o in orders
+                ])
 
         # 如果有FAQ匹配且置信度高，直接返回
         if faq_match and faq_match.get("score", 0) >= 0.7:

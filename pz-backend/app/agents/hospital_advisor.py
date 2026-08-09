@@ -2,8 +2,7 @@
 import json
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from app.database import SessionLocal
-from app.models import Hospital
+from app.mcp import client as mcp
 from .base import BaseAgent
 
 
@@ -33,25 +32,19 @@ class HospitalAdvisorAgent(BaseAgent):
         city = (context or {}).get("city", "武汉")
         urgency = (context or {}).get("urgency_level", "normal")
 
-        db = SessionLocal()
-        try:
-            # 1. 查询该城市所有医院
-            hospitals = db.query(Hospital).filter(
-                Hospital.city == city
-            ).all()
+        # 1. 查询该城市所有医院（走 MCP 工具层）
+        hospitals = mcp.search_hospitals(city=city, limit=100)["hospitals"]
 
-            # 2. 如果该城市没医院，扩大到周边或全国
-            if not hospitals:
-                hospitals = db.query(Hospital).limit(10).all()
-                city = "全国"
+        # 2. 如果该城市没医院，扩大到周边或全国
+        if not hospitals:
+            hospitals = mcp.search_hospitals(limit=10)["hospitals"]
+            city = "全国"
 
-            # 3. 构建医院数据（精简：只留名称和等级，限前5家）
-            hospital_list = "\n".join([
-                f"- {h.name}（{h.rank or '未评级'}）"
-                for h in hospitals[:5]
-            ])
-        finally:
-            db.close()
+        # 3. 构建医院数据（精简：只留名称和等级，限前5家）
+        hospital_list = "\n".join([
+            f"- {h['name']}（{h['rank'] or '未评级'}）"
+            for h in hospitals[:5]
+        ])
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.config["system_prompt"]),
@@ -93,18 +86,18 @@ class HospitalAdvisorAgent(BaseAgent):
         hospital_details = []
         seen_names = set()
         for h in hospitals:
-            if h.name not in seen_names:
-                seen_names.add(h.name)
+            if h["name"] not in seen_names:
+                seen_names.add(h["name"])
                 hospital_details.append({
-                    "id": h.id,
-                    "name": h.name,
-                    "rank": h.rank or "",
-                    "label": h.label or "",
-                    "intro": h.intro[:100] if h.intro else "",
-                    "address": h.address or "",
-                    "latitude": h.latitude or "",
-                    "longitude": h.longitude or "",
-                    "avatar_url": h.avatar_url or "",
+                    "id": h["id"],
+                    "name": h["name"],
+                    "rank": h["rank"] or "",
+                    "label": h["label"] or "",
+                    "intro": h["intro"][:100] if h["intro"] else "",
+                    "address": h["address"] or "",
+                    "latitude": h["latitude"] or "",
+                    "longitude": h["longitude"] or "",
+                    "avatar_url": h["avatar_url"] or "",
                 })
 
         return {

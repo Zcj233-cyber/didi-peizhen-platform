@@ -2,9 +2,7 @@
 import json
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from app.database import SessionLocal
-from app.models import Hospital
-from app.utils.weather import fetch_weather, get_travel_advice
+from app.mcp import client as mcp
 from .base import BaseAgent
 
 
@@ -30,16 +28,17 @@ class TriageAgent(BaseAgent):
 
     async def process(self, user_input: str, context: dict = None) -> dict:
         """分析症状并推荐"""
-        db = SessionLocal()
-        try:
-            hospitals = db.query(Hospital).all()
-            # 精简：只传医院名和等级，去掉label/intro，去掉陪诊师列表
-            hospital_list = "\n".join([
-                f"- {h.name}（{h.rank or '未评级'}）"
-                for h in hospitals
-            ])
-        finally:
-            db.close()
+        # 走 MCP 工具层取数
+        hospitals = mcp.search_hospitals(limit=200)["hospitals"]
+        companions = mcp.list_companions(active_only=True, limit=200)["companions"]
+        hospital_list = "\n".join([
+            f"- {h['name']}（{h['rank'] or '未评级'}）"
+            for h in hospitals
+        ])
+        companion_list = "\n".join([
+            f"- {c['name']}（{'女' if c['sex'] == 2 else '男'}，{c['age']}岁）"
+            for c in companions
+        ])
 
         age_info = ""
         if context and context.get("patient_age"):
@@ -53,6 +52,7 @@ class TriageAgent(BaseAgent):
             ("human", (
                 "用户症状描述：{symptoms}\n\n"
                 "可推荐的医院：\n{hospitals}\n\n"
+                "可推荐的陪诊师：\n{companions}\n\n"
                 "请分析并返回JSON格式的推荐结果，只返回JSON对象，不要加markdown代码块。"
             )),
         ])
@@ -61,6 +61,7 @@ class TriageAgent(BaseAgent):
         result = await chain.ainvoke({
             "symptoms": f"{user_input}{age_info}{gender_info}",
             "hospitals": hospital_list,
+            "companions": companion_list,
         })
 
         # 解析 JSON 结果
@@ -80,13 +81,16 @@ class TriageAgent(BaseAgent):
         except Exception:
             pass
 
-        # 获取天气与出行建议
+        # 获取天气与出行建议（走 MCP 工具层）
         weather_data = {"condition": "未知", "temperature": 20}
         travel_advice = ""
         try:
-            import asyncio
-            weather_data = await fetch_weather()
-            travel_advice = get_travel_advice(weather_data)
+            weather_data = await mcp.get_weather()
+            travel_advice = mcp.get_travel_advice(
+                condition=weather_data["condition"],
+                temperature=weather_data["temperature"],
+                wind=weather_data.get("wind", ""),
+            )["advice"]
         except Exception:
             pass
 
@@ -95,10 +99,13 @@ class TriageAgent(BaseAgent):
             "meta_data": {
                 "recommended_department": recommended_department,
                 "recommended_hospitals": [
-                    {"id": h.id, "name": h.name, "rank": h.rank}
+                    {"id": h["id"], "name": h["name"], "rank": h["rank"]}
                     for h in hospitals
                 ],
-                "recommended_companions": [],
+                "recommended_companions": [
+                    {"id": c["id"], "name": c["name"], "sex": "女" if c["sex"] == 2 else "男", "age": c["age"]}
+                    for c in companions
+                ],
                 "symptom_summary": symptom_summary,
                 "urgency_level": urgency_level,
                 "disclaimer": disclaimer,

@@ -1,11 +1,9 @@
 """Admin 智能运营中心 - 单Agent合并预警+分析+报告，大幅减少token消耗"""
 import json
-from datetime import datetime, timedelta
-from sqlalchemy import func
+from datetime import datetime
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from app.database import SessionLocal
-from app.models import Order, H5User, Companion
+from app.mcp import client as mcp
 from .base import BaseAgent
 
 
@@ -26,45 +24,18 @@ class AdminSuperAgent(BaseAgent):
         )
 
     def _collect_compact_metrics(self) -> str:
-        """采集最精简的业务指标，大幅减少token"""
-        db = SessionLocal()
-        try:
-            now = datetime.now()
-            today = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            yesterday = today - timedelta(days=1)
-            week_ago = today - timedelta(days=7)
-
-            # 今日/昨日/近7日汇总 - 一行搞定
-            t_orders = db.query(func.count(Order.id)).scalar() or 0
-            t_today = db.query(func.count(Order.id)).filter(Order.created_at >= today).scalar() or 0
-            t_yest = db.query(func.count(Order.id)).filter(Order.created_at >= yesterday, Order.created_at < today).scalar() or 0
-            t_week = db.query(func.count(Order.id)).filter(Order.created_at >= week_ago).scalar() or 0
-
-            # 状态分布
-            status = {}
-            for s in ["待支付", "待服务", "已完成", "已取消"]:
-                status[s] = db.query(func.count(Order.id)).filter(Order.trade_state == s).scalar() or 0
-
-            # 用户
-            u_total = db.query(func.count(H5User.id)).scalar() or 0
-            u_today = db.query(func.count(H5User.id)).filter(H5User.created_at >= today).scalar() or 0
-            u_yest = db.query(func.count(H5User.id)).filter(H5User.created_at >= yesterday, H5User.created_at < today).scalar() or 0
-
-            # 陪诊师
-            c_active = db.query(func.count(Companion.id)).filter(Companion.active == 1).scalar() or 0
-
-            # 收入估算
-            rev_today = float(db.query(func.sum(Order.paid_price)).filter(Order.created_at >= today).scalar() or 0)
-
-            return (
-                f"订单:总{t_orders},今{t_today},昨{t_yest},近7天{t_week},"
-                f"待支付{status['待支付']},待服务{status['待服务']},已完成{status['已完成']},已取消{status['已取消']}|"
-                f"用户:总{u_total},今{u_today},昨{u_yest}|"
-                f"陪诊师:活跃{c_active}|"
-                f"收入(元):今{rev_today}"
-            )
-        finally:
-            db.close()
+        """采集最精简的业务指标，大幅减少token（走 MCP 工具层）"""
+        s = mcp.get_business_stats(
+            include_yesterday=True, include_week=True, include_revenue=True
+        )
+        status = s["status_distribution"]
+        return (
+            f"订单:总{s['total_orders']},今{s['today_orders']},昨{s['yesterday_orders']},近7天{s['week_orders']},"
+            f"待支付{status['待支付']},待服务{status['待服务']},已完成{status['已完成']},已取消{status['已取消']}|"
+            f"用户:总{s['total_users']},今{s['today_users']},昨{s['yesterday_users']}|"
+            f"陪诊师:活跃{s['active_companions']}|"
+            f"收入(元):今{s['revenue_today']}"
+        )
 
     async def process(self, user_input: str = "", context: dict = None) -> dict:
         """一次调用完成预警+分析+报告"""
@@ -161,51 +132,3 @@ class AdminOrchestrator:
             },
         }
 
-    async def alert_only(self) -> dict:
-        result = await self._agent.process()
-        return {"alerts": result["alerts"], "has_alert": result["has_alert"]}
-
-    async def analytics_only(self, focus: str = "all") -> dict:
-        result = await self._agent.process()
-        analysis_raw = result.get("analysis", {})
-        report_raw = result.get("report", {})
-        if isinstance(analysis_raw, dict):
-            findings = analysis_raw.get("key_findings", [])
-            dims = analysis_raw.get("dimensions", [])
-        elif isinstance(analysis_raw, list):
-            findings = analysis_raw
-            dims = []
-        else:
-            findings = []
-            dims = []
-        suggestions = report_raw.get("suggestions", []) if isinstance(report_raw, dict) else []
-        return {
-            "key_findings": findings,
-            "dimensions": dims,
-            "action_items": suggestions,
-            "analytics": {},
-        }
-
-    async def report_only(self, days: int = 1) -> dict:
-        result = await self._agent.process()
-        r = result.get("report", {})
-        if isinstance(r, dict):
-            highlights = r.get("highlights", [])
-            risks = r.get("risks", [])
-            suggestions = r.get("suggestions", [])
-            summary = r.get("summary", "")
-        else:
-            highlights = []
-            risks = []
-            suggestions = []
-            summary = str(r) if r else ""
-        return {
-            "reply": summary,
-            "report_title": "运营日报" if days <= 1 else "运营周报",
-            "report_date": datetime.now().strftime("%Y-%m-%d"),
-            "sections": [],
-            "highlights": highlights,
-            "risks": risks,
-            "suggestions": suggestions,
-            "closing": summary,
-        }

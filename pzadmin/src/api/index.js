@@ -99,15 +99,3 @@ export const agentAdminChat = (data) => {
 export const adminDashboard = () => {
     return request.get("/agent/admin/dashboard")
 }
-
-export const adminDashboardAlerts = () => {
-    return request.get("/agent/admin/dashboard/alerts")
-}
-
-export const adminDashboardAnalytics = (params) => {
-    return request.get("/agent/admin/dashboard/analytics", { params })
-}
-
-export const adminDashboardReport = (params) => {
-    return request.get("/agent/admin/dashboard/report", { params })
-}

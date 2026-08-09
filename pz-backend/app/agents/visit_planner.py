@@ -5,11 +5,7 @@ from datetime import datetime
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from app.database import SessionLocal
-from app.agent_models import AgentConversation, AgentMessage, AgentTask
-from app.models import Hospital
-from app.utils.weather import fetch_weather, get_travel_advice
-from app.utils.distance import haversine_distance
+from app.mcp import client as mcp
 
 from .base import BaseAgent
 from .triage_agent import TriageAgent
@@ -138,7 +134,7 @@ class VisitPlannerOrchestrator:
         nearest = "武汉"
         min_dist = float("inf")
         for city, (clat, clng) in CITY_COORDS.items():
-            dist = haversine_distance(lat, lng, clat, clng)
+            dist = mcp.calc_distance(lat, lng, clat, clng)["distance_km"]
             if dist < min_dist:
                 min_dist = dist
                 nearest = city
@@ -174,13 +170,9 @@ class VisitPlannerOrchestrator:
         department = triage_meta.get("recommended_department", "内科")
         urgency = triage_meta.get("urgency_level", "normal")
 
-        # 获取医院的等级用于费用预估
-        db = SessionLocal()
-        try:
-            hospitals = db.query(Hospital).filter(Hospital.city == city).all()
-            hospital_rank = hospitals[0].rank if hospitals else "三甲"
-        finally:
-            db.close()
+        # 获取医院的等级用于费用预估（走 MCP 工具层）
+        hospitals = mcp.search_hospitals(city=city, limit=1)["hospitals"]
+        hospital_rank = hospitals[0]["rank"] if hospitals else "三甲"
 
         # ==================== Phase 2: 并行执行 ====================
         # 所有Agent共享的上下文
@@ -203,11 +195,16 @@ class VisitPlannerOrchestrator:
             f"预估{department}就诊费用", shared_context
         )
 
-        # 天气和出行建议（不调LLM，用已有工具）
+        # 天气和出行建议（不调LLM，用 MCP 工具）
         async def get_weather_and_advice():
             try:
-                weather_data = await fetch_weather(city)
-                advice = get_travel_advice(weather_data, "医院")
+                weather_data = await mcp.get_weather(city)
+                advice = mcp.get_travel_advice(
+                    condition=weather_data["condition"],
+                    temperature=weather_data["temperature"],
+                    wind=weather_data.get("wind", ""),
+                    dest_name="医院",
+                )["advice"]
                 return weather_data, advice
             except Exception:
                 return {"condition": "未知", "temperature": 20}, "天气信息获取失败"

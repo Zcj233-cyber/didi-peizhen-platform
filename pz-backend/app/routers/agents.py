@@ -194,36 +194,6 @@ async def get_admin_dashboard(request: Request):
     return success(result)
 
 
-@router.get("/admin/dashboard/alerts")
-async def get_admin_alerts(request: Request):
-    """仅获取业务预警"""
-    payload = verify_admin_token(request)
-    if isinstance(payload, dict) and payload.get("code") == -2:
-        return payload
-    result = await admin_dashboard.alert_only()
-    return success(result)
-
-
-@router.get("/admin/dashboard/analytics")
-async def get_admin_analytics(request: Request, focus: str = "all"):
-    """获取深度业务分析"""
-    payload = verify_admin_token(request)
-    if isinstance(payload, dict) and payload.get("code") == -2:
-        return payload
-    result = await admin_dashboard.analytics_only(focus)
-    return success(result)
-
-
-@router.get("/admin/dashboard/report")
-async def get_admin_report(request: Request, days: int = 1):
-    """获取运营报告（日/周）"""
-    payload = verify_admin_token(request)
-    if isinstance(payload, dict) and payload.get("code") == -2:
-        return payload
-    result = await admin_dashboard.report_only(days)
-    return success(result)
-
-
 # ==================== FAQ 管理 ====================
 
 @router.get("/admin/faq/list")

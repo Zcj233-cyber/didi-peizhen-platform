@@ -33,7 +33,7 @@
       <el-button type="primary" :icon="Refresh" @click="loadAll" :loading="loading" round>
         {{ loading ? 'AI分析中...' : '🔄 刷新智能分析' }}
       </el-button>
-      <span class="action-hint" v-if="loading">正在调用多个AI专家分析业务数据...</span>
+      <span class="action-hint" v-if="loading">正在AI分析业务数据...</span>
     </div>
 
     <!-- ==================== 主内容：标签页 ==================== -->
@@ -144,8 +144,7 @@
             <div class="report-title">{{ report.report_title || '运营日报' }}</div>
             <div class="report-date">{{ report.report_date || '' }}</div>
             <div class="report-actions">
-              <el-button size="small" @click="genReport(1)" :disabled="loading">📅 今日日报</el-button>
-              <el-button size="small" @click="genReport(7)" :disabled="loading">📆 本周周报</el-button>
+              <el-button size="small" @click="loadAll" :disabled="loading" :loading="loading">🔄 重新生成报告</el-button>
             </div>
           </div>
 
@@ -196,8 +195,7 @@
 import { ref, reactive, computed, onMounted, nextTick } from "vue";
 import { useRoute } from "vue-router";
 import {
-  adminDashboard, adminDashboardAlerts,
-  adminDashboardAnalytics, adminDashboardReport
+  adminDashboard
 } from "../../../api";
 import {
   WarningFilled, SuccessFilled, Refresh, ArrowDown,
@@ -259,63 +257,31 @@ const loadAll = async () => {
   showAlerts.value = true;
 
   try {
-    // 并行加载
-    const [dashRes, alertRes, analyticsRes] = await Promise.all([
-      adminDashboard().catch(() => ({ data: { code: -1 } })),
-      adminDashboardAlerts().catch(() => ({ data: { code: -1 } })),
-      adminDashboardAnalytics({ focus: "all" }).catch(() => ({ data: { code: -1 } })),
-    ]);
+    // 单接口一次调用：alerts + analytics + report 一站式返回
+    const { data } = await adminDashboard();
+    if (data.code === 10000) {
+      const d = data.data || {};
 
-    // Dashboard
-    if (dashRes.data.code === 10000) {
-      const d = dashRes.data.data || {};
+      // 预警
       alerts.value = d.alerts || [];
       Object.assign(alertMetricsData, d.alert_metrics || {});
 
-      if (d.report) {
-        Object.assign(report, d.report);
-      }
-    }
-
-    // Alerts (补充)
-    if (alertRes.data.code === 10000) {
-      const a = alertRes.data.data || {};
-      if (a.alerts && a.alerts.length > (alerts.value.length || 0)) {
-        alerts.value = a.alerts;
-      }
-      Object.assign(alertMetricsData, a.metrics || {});
-    }
-
-    // Analytics
-    if (analyticsRes.data.code === 10000) {
-      const a = analyticsRes.data.data || {};
+      // 深度分析
+      const a = d.analytics || {};
       analytics.key_findings = a.key_findings || [];
       analytics.dimensions = a.dimensions || [];
       analytics.action_items = a.action_items || [];
       analytics.analytics = a.analytics || {};
+
+      // 运营报告
+      if (d.report) {
+        Object.assign(report, d.report);
+      }
     }
   } catch (e) {
     console.error("Dashboard load error:", e);
   }
 
-  loading.value = false;
-};
-
-const genReport = async (days) => {
-  loading.value = true;
-  try {
-    const { data } = await adminDashboardReport({ days });
-    if (data.code === 10000) {
-      const d = data.data || {};
-      report.sections = d.sections || [];
-      report.highlights = d.highlights || [];
-      report.risks = d.risks || [];
-      report.suggestions = d.suggestions || [];
-      report.closing = d.closing || "";
-      report.report_title = d.report_title || (days === 1 ? "运营日报" : "运营周报");
-      report.report_date = d.report_date || "";
-    }
-  } catch (e) { /* ignore */ }
   loading.value = false;
 };
 

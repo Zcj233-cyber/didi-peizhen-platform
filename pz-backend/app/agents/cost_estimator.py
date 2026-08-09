@@ -2,8 +2,7 @@
 import json
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from app.database import SessionLocal
-from app.models import Service
+from app.mcp import client as mcp
 from .base import BaseAgent
 
 
@@ -39,14 +38,11 @@ class CostEstimatorAgent(BaseAgent):
         city = (context or {}).get("city", "武汉")
         hospital_rank = (context or {}).get("hospital_rank", "三甲")
 
-        # 查陪诊服务价格
-        db = SessionLocal()
-        try:
-            service = db.query(Service).first()
-            companion_price = service.price if service else 0.5
-            service_name = service.name if service else "陪诊服务"
-        finally:
-            db.close()
+        # 查陪诊服务价格（走 MCP 工具层）
+        services = mcp.list_services(limit=1)["services"]
+        service = services[0] if services else None
+        companion_price = service["price"] if service else 0.5
+        service_name = service["name"] if service else "陪诊服务"
 
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.config["system_prompt"]),

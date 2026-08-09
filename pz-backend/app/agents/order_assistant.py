@@ -1,8 +1,7 @@
 """订单助手 Agent - 订单查询、改约、取消等"""
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
-from app.database import SessionLocal
-from app.models import Order
+from app.mcp import client as mcp
 from .base import BaseAgent
 
 
@@ -24,20 +23,14 @@ class OrderAssistantAgent(BaseAgent):
 
     async def process(self, user_input: str, context: dict = None) -> dict:
         """处理订单相关请求"""
-        db = SessionLocal()
-        try:
-            user_id = (context or {}).get("user_id", 0)
-            orders = []
-            if user_id:
-                orders = db.query(Order).filter(
-                    Order.user_id == user_id
-                ).order_by(Order.created_at.desc()).limit(5).all()
-        finally:
-            db.close()
+        user_id = (context or {}).get("user_id", 0)
+        orders = []
+        if user_id:
+            orders = mcp.get_user_orders(user_id=user_id, limit=5)["orders"]
 
         order_summary = "您暂无订单。" if not orders else "\n".join([
-            f"- 订单号：{o.out_trade_no}，状态：{o.trade_state}，"
-            f"医院：{o.hospital_name}，时间：{o.starttime or '待定'}"
+            f"- 订单号：{o['out_trade_no']}，状态：{o['trade_state']}，"
+            f"医院：{o['hospital_name']}，时间：{o['starttime'] or '待定'}"
             for o in orders
         ])
 

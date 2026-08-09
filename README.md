@@ -92,12 +92,70 @@
 
 ---
 
+## 🔌 MCP（Model Context Protocol）接入
+
+平台内置 **MCP Server**，把 Agent 依赖的数据库查询与外部 API 全部**标准化为 11 个 MCP 工具**，Agent 统一经工具层取数，同时端点对外暴露，可供 Claude Desktop / Cursor / MCP Inspector 等任何 MCP 客户端连接。
+
+### MCP 端点
+
+```
+http://localhost:2306/v3pz/mcp/
+```
+
+> ⚠️ 尾斜杠必须带上；无尾斜杠会自动 307 跳转。
+
+### 提供的工具（全部只读）
+
+| 工具 | 说明 | 使用方 |
+|---|---|---|
+| `search_hospitals` | 按城市/名称搜索医院 | 分诊/医院推荐/客服/就医规划 |
+| `list_companions` | 查询陪诊师列表 | 分诊 |
+| `list_services` | 查询服务项目及价格 | 费用预估/客服 |
+| `get_user_orders` | 查询用户订单 | 订单助手/客服 |
+| `search_faq` | 搜索 FAQ 知识库（相关度打分） | 客服 |
+| `get_business_stats` | 运营业务统计（订单/用户/陪诊师/收入） | 运营助手/Admin仪表盘 |
+| `get_weather` | 获取城市当前天气 | 分诊/就医规划 |
+| `get_travel_advice` | 根据天气生成出行建议 | 分诊/就医规划 |
+| `calc_distance` | 两经纬度点间直线距离 | 就医规划 |
+| `get_static_map_url` | 生成高德静态地图 URL | 对外暴露 |
+| `get_hospital_image` | 获取医院实景图 URL | 对外暴露 |
+
+### 如何连接
+
+**MCP Inspector**：
+
+```bash
+npx @modelcontextprotocol/inspector
+# 传输类型选 Streamable HTTP，URL 填 http://localhost:2306/v3pz/mcp/
+```
+
+**Claude Desktop**（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "pz-medical": {
+      "url": "http://localhost:2306/v3pz/mcp/"
+    }
+  }
+}
+```
+
+### 架构说明
+
+- `app/mcp/tools.py` 是**工具唯一来源**（`TOOL_REGISTRY`），`server.py`（对外 MCP 端点）与 `client.py`（进程内门面）都遍历它注册，两边不会漂移
+- Agent 进程内走 `client.py` 直接调用工具函数，不经过 MCP 协议开销；`tools.py` 复用了原 `utils/` 的天气/地图/距离封装，未重复实现
+- `main.py` 通过 FastAPI lifespan 驱动 MCP session manager，保证挂载子应用正常运行
+
+---
+
 ## 🏗️ 技术栈
 
 | 层 | 技术 |
 |---|------|
 | **后端框架** | Python FastAPI |
 | **AI框架** | LangChain + DeepSeek API |
+| **Agent工具层** | MCP Server（官方 `mcp` SDK，Streamable HTTP） |
 | **数据库** | MySQL + SQLAlchemy ORM |
 | **认证** | JWT (python-jose) + bcrypt |
 | **前端(H5)** | Vue3 + Vant4（移动端） |
@@ -121,6 +179,10 @@ e:/vscode代码/项目/
 │   │   │   ├── operations_agent.py  # 运营分析
 │   │   │   ├── orchestrator.py      # Agent编排器
 │   │   │   └── deepseek_llm.py      # DeepSeek 封装
+│   │   ├── mcp/                 # MCP 模块
+│   │   │   ├── tools.py         # 工具唯一来源（11个工具 + TOOL_REGISTRY）
+│   │   │   ├── server.py        # MCP Server（挂载 /v3pz/mcp/）
+│   │   │   └── client.py        # Agent 进程内调用门面
 │   │   ├── routers/
 │   │   │   ├── h5.py            # H5端 API
 │   │   │   ├── admin.py         # 后台管理 API
