@@ -1,12 +1,13 @@
-"""MCP 进程内门面 - 供内部 Agent 直接调用工具
+"""内部统一工具层门面 - 供内部 Agent 直接调用工具
 
 Agent 用法：
     from app.mcp import client as mcp
     hospitals = mcp.search_hospitals(city="武汉")["hospitals"]
     weather = await mcp.get_weather("北京")
 
-工具函数与 MCP Server 注册的是同一批函数对象（唯一来源在 tools.py），
-不会出现"Server 一份、Agent 另一份"的漂移。
+工具函数唯一来源在 tools.py 的 TOOL_REGISTRY，本模块与调用方共享同一批函数对象，
+不会出现"定义一份、调用另一份"的漂移。工具按 MCP 工具规范组织（函数 + 注册表），
+仅限进程内使用，不对外提供网络端点。
 """
 from .tools import (
     TOOL_REGISTRY,

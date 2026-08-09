@@ -92,19 +92,13 @@
 
 ---
 
-## 🔌 MCP（Model Context Protocol）接入
+## 🔌 内部统一工具层（按 MCP 工具规范组织）
 
-平台内置 **MCP Server**，把 Agent 依赖的数据库查询与外部 API 全部**标准化为 11 个 MCP 工具**，Agent 统一经工具层取数，同时端点对外暴露，可供 Claude Desktop / Cursor / MCP Inspector 等任何 MCP 客户端连接。
+Agent 依赖的数据库查询与外部 API（天气/地图/距离）全部**标准化为统一的工具层**，按 MCP 工具规范组织（函数 + 注册表），Agent 不再各自直连数据库，统一经工具层取数。
 
-### MCP 端点
+> 仅限进程内使用，**不对外提供网络端点**，不会暴露给外部客户端。
 
-```
-http://localhost:2306/v3pz/mcp/
-```
-
-> ⚠️ 尾斜杠必须带上；无尾斜杠会自动 307 跳转。
-
-### 提供的工具（全部只读）
+### 工具清单（全部只读）
 
 | 工具 | 说明 | 使用方 |
 |---|---|---|
@@ -117,35 +111,14 @@ http://localhost:2306/v3pz/mcp/
 | `get_weather` | 获取城市当前天气 | 分诊/就医规划 |
 | `get_travel_advice` | 根据天气生成出行建议 | 分诊/就医规划 |
 | `calc_distance` | 两经纬度点间直线距离 | 就医规划 |
-| `get_static_map_url` | 生成高德静态地图 URL | 对外暴露 |
-| `get_hospital_image` | 获取医院实景图 URL | 对外暴露 |
-
-### 如何连接
-
-**MCP Inspector**：
-
-```bash
-npx @modelcontextprotocol/inspector
-# 传输类型选 Streamable HTTP，URL 填 http://localhost:2306/v3pz/mcp/
-```
-
-**Claude Desktop**（`claude_desktop_config.json`）：
-
-```json
-{
-  "mcpServers": {
-    "pz-medical": {
-      "url": "http://localhost:2306/v3pz/mcp/"
-    }
-  }
-}
-```
+| `get_static_map_url` | 生成高德静态地图 URL | 内部备用 |
+| `get_hospital_image` | 获取医院实景图 URL | 内部备用 |
 
 ### 架构说明
 
-- `app/mcp/tools.py` 是**工具唯一来源**（`TOOL_REGISTRY`），`server.py`（对外 MCP 端点）与 `client.py`（进程内门面）都遍历它注册，两边不会漂移
-- Agent 进程内走 `client.py` 直接调用工具函数，不经过 MCP 协议开销；`tools.py` 复用了原 `utils/` 的天气/地图/距离封装，未重复实现
-- `main.py` 通过 FastAPI lifespan 驱动 MCP session manager，保证挂载子应用正常运行
+- `app/mcp/tools.py` 是**工具唯一来源**（`TOOL_REGISTRY`），定义全部工具函数
+- `app/mcp/client.py` 是进程内门面，8 个 Agent 统一 `from app.mcp import client as mcp` 调用，与工具定义共享同一批函数对象，不会漂移
+- 工具函数复用了原 `utils/` 的天气/地图/距离封装，未重复实现
 
 ---
 
@@ -155,7 +128,7 @@ npx @modelcontextprotocol/inspector
 |---|------|
 | **后端框架** | Python FastAPI |
 | **AI框架** | LangChain + DeepSeek API |
-| **Agent工具层** | MCP Server（官方 `mcp` SDK，Streamable HTTP） |
+| **Agent工具层** | 内部统一工具层（app/mcp，按 MCP 工具规范） |
 | **数据库** | MySQL + SQLAlchemy ORM |
 | **认证** | JWT (python-jose) + bcrypt |
 | **前端(H5)** | Vue3 + Vant4（移动端） |
@@ -179,9 +152,8 @@ e:/vscode代码/项目/
 │   │   │   ├── operations_agent.py  # 运营分析
 │   │   │   ├── orchestrator.py      # Agent编排器
 │   │   │   └── deepseek_llm.py      # DeepSeek 封装
-│   │   ├── mcp/                 # MCP 模块
+│   │   ├── mcp/                 # 内部统一工具层（按 MCP 工具规范，不对外暴露）
 │   │   │   ├── tools.py         # 工具唯一来源（11个工具 + TOOL_REGISTRY）
-│   │   │   ├── server.py        # MCP Server（挂载 /v3pz/mcp/）
 │   │   │   └── client.py        # Agent 进程内调用门面
 │   │   ├── routers/
 │   │   │   ├── h5.py            # H5端 API

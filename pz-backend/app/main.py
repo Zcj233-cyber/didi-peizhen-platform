@@ -1,9 +1,7 @@
 """FastAPI 主应用"""
-import contextlib
 import json
 from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from .config import APP_PREFIX
@@ -12,26 +10,12 @@ from .models import H5User, AdminUser
 from .utils.response import success, error
 from .utils.auth import verify_password, create_token
 from .routers import h5, admin, agents
-from .mcp.server import mcp_app, mcp as mcp_server
-
-
-@contextlib.asynccontextmanager
-async def lifespan(app: FastAPI):
-    """应用生命周期：驱动 MCP session manager 的任务组。
-
-    mcp_app（streamable_http_app 生成的 Starlette 子应用）被 mount 进 FastAPI 后，
-    其自身的 lifespan 不会执行，需在此手动初始化，否则 MCP 请求会报
-    "Task group is not initialized"。
-    """
-    async with mcp_server._session_manager.run():
-        yield
 
 
 app = FastAPI(
     title="医疗陪诊服务平台",
     description="医疗陪诊服务平台后端 API",
     version="1.0.0",
-    lifespan=lifespan,
 )
 
 # CORS 跨域配置
@@ -94,18 +78,6 @@ async def unified_login(request: Request, db: Session = Depends(get_db)):
 app.include_router(h5.router, prefix=APP_PREFIX)
 app.include_router(admin.router, prefix=APP_PREFIX)
 app.include_router(agents.router, prefix=APP_PREFIX)
-
-# ==================== MCP Server ====================
-# 对外 MCP 端点：http://<host>:2306/v3pz/mcp/ （注意带尾斜杠）
-# Streamable HTTP 传输，外部 MCP 客户端（Claude Desktop / Cursor / Inspector）可直接连接。
-
-# 兜底：无尾斜杠的请求 307 重定向到带尾斜杠（必须在 mount 之前注册，路径才优先命中）
-@app.api_route(f"{APP_PREFIX}/mcp", methods=["GET", "POST"], include_in_schema=False)
-async def mcp_no_slash_redirect():
-    return RedirectResponse(f"{APP_PREFIX}/mcp/", status_code=307)
-
-# 挂载 MCP 应用（Starlette Mount 的可用 URL 带尾斜杠）
-app.mount(f"{APP_PREFIX}/mcp", mcp_app)
 
 
 @app.get(f"{APP_PREFIX}/health")
