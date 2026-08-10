@@ -34,7 +34,7 @@
 
 ## 🧠 AI Agent 系统
 
-系统集成了 **8 个专业 AI Agent**，由 LangChain + DeepSeek API 驱动，采用 **"单一职责 Agent + 智能编排"** 架构：
+系统集成了 **9 个专业 AI Agent**，由 LangChain + DeepSeek API 驱动，采用 **"单一职责 Agent + 智能编排"** 架构：
 
 | Agent | 职责 | 使用场景 |
 |-------|------|---------|
@@ -45,7 +45,8 @@
 | 🧠 **综合合成Agent** | 汇总多Agent输出，整合成完整攻略 | 就医规划最后一步 |
 | 💬 **智能客服Agent** | FAQ匹配 + LLM增强回答 | 解答价格、流程、订单等常见问题 |
 | 📋 **订单助手Agent** | 订单查询、改约、取消 | 用户询问订单状态或需要操作订单 |
-| 📊 **运营数据助手** | 数据统计、运营分析 | 管理员对话查询业务数据 |
+| 📊 **运营数据助手** | 数据统计、运营分析（对话式） | 管理员对话查询业务数据 |
+| 📈 **智能运营中心** | 预警+分析+报告一次生成（报告式） | 管理员查看AI运营日报 |
 
 ### 两种智能模式
 
@@ -146,10 +147,15 @@ e:/vscode代码/项目/
 │   ├── app/
 │   │   ├── agents/              # AI Agent 核心
 │   │   │   ├── base.py          # BaseAgent 抽象类
-│   │   │   ├── customer_service.py  # 客服Agent
 │   │   │   ├── triage_agent.py      # 分诊Agent
+│   │   │   ├── hospital_advisor.py  # 医院推荐Agent
+│   │   │   ├── prep_guide.py        # 就诊准备Agent
+│   │   │   ├── cost_estimator.py    # 费用预估Agent
+│   │   │   ├── visit_planner.py     # 就医规划编排器
+│   │   │   ├── customer_service.py  # 客服Agent
 │   │   │   ├── order_assistant.py   # 订单助手
 │   │   │   ├── operations_agent.py  # 运营分析
+│   │   │   ├── admin_dashboard.py   # 智能运营中心
 │   │   │   ├── orchestrator.py      # Agent编排器
 │   │   │   └── deepseek_llm.py      # DeepSeek 封装
 │   │   ├── mcp/                 # 内部统一工具层（按 MCP 工具规范，不对外暴露）
@@ -165,6 +171,8 @@ e:/vscode代码/项目/
 │   │   └── utils/               # 工具（天气、地图、距离）
 │   ├── seed.py                  # 种子数据
 │   ├── seed_agents.py           # Agent种子数据
+│   ├── seed_agent_menu.py       # AI运营菜单种子数据
+│   ├── seed_amap_images.py      # 医院实景图种子数据
 │   ├── seed_faq.py              # FAQ种子数据
 │   └── requirements.txt
 ├── pzH5/                        # H5移动端
@@ -191,6 +199,7 @@ e:/vscode代码/项目/
         │   ├── auth/            # 权限管理
         │   └── agent/           # AI运营
         │       ├── overview/    # 运营数据助手
+        │       ├── dashboard/   # 智能运营中心
         │       └── config/      # FAQ知识库
         ├── api/index.js         # API 封装
         └── router/index.js      # 路由配置

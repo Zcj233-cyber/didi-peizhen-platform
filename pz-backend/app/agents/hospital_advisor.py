@@ -82,6 +82,12 @@ class HospitalAdvisorAgent(BaseAgent):
         except Exception:
             pass
 
+        # 候选池校验：仅保留数据库中真实存在的医院，避免 LLM 幻觉产生库外医院
+        valid_names = {h["name"] for h in hospitals}
+        recommended = [r for r in recommended if r.get("name") in valid_names]
+        if best_choice and best_choice not in valid_names:
+            best_choice = recommended[0]["name"] if recommended else (hospitals[0]["name"] if hospitals else "")
+
         # 构建返回的医院数据（带完整信息）
         hospital_details = []
         seen_names = set()
