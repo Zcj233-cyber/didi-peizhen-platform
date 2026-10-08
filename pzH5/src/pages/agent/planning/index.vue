@@ -94,6 +94,8 @@
         <div class="guide-title">📋 {{ result.guide_title || '就诊攻略' }}</div>
         <div class="guide-summary" v-if="result.guide_summary">{{ result.guide_summary }}</div>
       </div>
+      <van-notice-bar v-if="result.warnings && result.warnings.length" wrapable :scrollable="false"
+        :text="'部分信息暂不可用：' + result.warnings.join('；')" />
 
       <!-- 攻略分段 -->
       <div class="guide-sections" v-if="result.guide_sections && result.guide_sections.length">
@@ -208,6 +210,9 @@
           <span class="card-title">费用预估</span>
         </div>
         <div class="card-body">
+          <div class="cost-insurance" v-if="result.cost_estimate.hospital_name">
+            估算依据：{{ result.cost_estimate.hospital_name }} · {{ result.cost_estimate.hospital_rank }}
+          </div>
           <div class="cost-grid">
             <div class="cost-item" v-if="result.cost_estimate.registration_fee">
               <div class="cost-label">挂号费</div>
@@ -257,6 +262,7 @@
               <span v-if="result.weather.wind"> · {{ result.weather.wind }}</span>
             </span>
           </div>
+          <div v-if="result.weather.source === 'realtime'" class="disclaimer">实时天气查询结果</div>
           <div class="travel-advice" v-if="result.travel_advice">
             <van-icon name="location-o" color="#f57c00" />
             {{ result.travel_advice }}
@@ -411,8 +417,10 @@ const doPlanning = async () => {
       loading.value = false;
     }
   } catch (e) {
-    showToast("网络错误，请稍后重试");
+    showToast(e.response?.data?.detail || "规划失败，请稍后重试");
     loading.value = false;
+  } finally {
+    clearInterval(animTimer);
   }
 
   // 等动画完成再隐藏loading

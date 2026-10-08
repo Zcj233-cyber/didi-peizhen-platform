@@ -1,9 +1,11 @@
 """分诊推荐 Agent - 症状分析 + 医院科室推荐 + 陪诊师推荐"""
 import json
+import asyncio
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from app.mcp import client as mcp
 from .base import BaseAgent
+from .results import parse_result
 
 
 class TriageAgent(BaseAgent):
@@ -28,9 +30,13 @@ class TriageAgent(BaseAgent):
 
     async def process(self, user_input: str, context: dict = None) -> dict:
         """分析症状并推荐"""
-        # 走 MCP 工具层取数
-        hospitals = mcp.search_hospitals(limit=200)["hospitals"]
-        companions = mcp.list_companions(active_only=True, limit=200)["companions"]
+        context = context or {}
+        analysis_only = context.get("analysis_only", False)
+        # 攻略只需要科室与紧急程度；独立分诊页面仍需要这些列表。
+        hospitals, companions = [], []
+        if not analysis_only:
+            hospitals = (await asyncio.to_thread(mcp.search_hospitals, limit=200))["hospitals"]
+            companions = (await asyncio.to_thread(mcp.list_companions, active_only=True, limit=200))["companions"]
         hospital_list = "\n".join([
             f"- {h['name']}（{h['rank'] or '未评级'}）"
             for h in hospitals
@@ -47,14 +53,18 @@ class TriageAgent(BaseAgent):
         if context and context.get("patient_gender"):
             gender_info = f"，性别{context['patient_gender']}"
 
+        human_prompt = (
+            "用户症状描述：{symptoms}\n\n"
+            "请仅分析症状并返回科室、摘要、紧急程度和免责声明。只返回JSON对象。"
+        ) if analysis_only else (
+            "用户症状描述：{symptoms}\n\n"
+            "可推荐的医院：\n{hospitals}\n\n"
+            "可推荐的陪诊师：\n{companions}\n\n"
+            "请分析并返回JSON格式的推荐结果，只返回JSON对象，不要加markdown代码块。"
+        )
         prompt = ChatPromptTemplate.from_messages([
             ("system", self.config["system_prompt"]),
-            ("human", (
-                "用户症状描述：{symptoms}\n\n"
-                "可推荐的医院：\n{hospitals}\n\n"
-                "可推荐的陪诊师：\n{companions}\n\n"
-                "请分析并返回JSON格式的推荐结果，只返回JSON对象，不要加markdown代码块。"
-            )),
+            ("human", human_prompt),
         ])
 
         chain = prompt | self.llm | StrOutputParser()
@@ -69,6 +79,18 @@ class TriageAgent(BaseAgent):
         urgency_level = "normal"
         symptom_summary = user_input
         disclaimer = "以上推荐仅供参考，请以医生诊断为准"
+
+        if analysis_only:
+            data = parse_result(result, string_fields=("recommended_department", "symptom_summary", "urgency_level", "disclaimer"),
+                                required_text=("recommended_department", "urgency_level"))
+            if data["urgency_level"] not in {"normal", "urgent", "emergency"}:
+                raise ValueError("invalid urgency")
+            return {"reply": "", "meta_data": {
+                "recommended_department": data["recommended_department"],
+                "symptom_summary": data.get("symptom_summary") or user_input,
+                "urgency_level": data["urgency_level"],
+                "disclaimer": data.get("disclaimer") or disclaimer,
+            }}
 
         try:
             if "{" in result:
@@ -85,7 +107,7 @@ class TriageAgent(BaseAgent):
         weather_data = {"condition": "未知", "temperature": 20}
         travel_advice = ""
         try:
-            weather_data = await mcp.get_weather()
+            weather_data = await mcp.get_weather(context.get("city") or "北京")
             travel_advice = mcp.get_travel_advice(
                 condition=weather_data["condition"],
                 temperature=weather_data["temperature"],

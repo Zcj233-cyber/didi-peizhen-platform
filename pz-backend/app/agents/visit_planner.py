@@ -1,7 +1,9 @@
 """就医规划 Orchestrator - 多Agent协作生成完整就诊攻略"""
 import asyncio
 import json
-from datetime import datetime
+import logging
+from uuid import uuid4
+from fastapi import HTTPException
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
@@ -12,6 +14,11 @@ from .triage_agent import TriageAgent
 from .hospital_advisor import HospitalAdvisorAgent
 from .prep_guide import PrepGuideAgent
 from .cost_estimator import CostEstimatorAgent
+from .results import parse_result
+
+logger = logging.getLogger(__name__)
+STAGE_LABELS = {"triage": "分诊分析", "hospital": "医院推荐", "prep": "准备清单",
+                "cost": "费用预估", "weather": "实时天气", "synthesis": "攻略整理"}
 
 
 class SynthesisAgent(BaseAgent):
@@ -70,35 +77,34 @@ class SynthesisAgent(BaseAgent):
                 "总费用": cost_meta.get("total_range", ""),
                 "医保报销": cost_meta.get("insurance_ratio", ""),
             },
-            "天气": f"{weather_data.get('condition','')} {weather_data.get('temperature','')}°C",
+            "天气": (f"{weather_data.get('condition','')} {weather_data.get('temperature','')}°C"
+                      if weather_data.get("source") == "realtime" else "实时天气暂不可用"),
             "出行建议": travel_advice,
             "患者年龄": patient_age,
             "患者性别": patient_gender,
+            "缺失步骤": (context or {}).get("warnings", []),
+            "费用对应医院": cost_meta.get("hospital_name", ""),
+            "费用对应等级": cost_meta.get("hospital_rank", ""),
+            "费用说明": cost_meta.get("disclaimer", ""),
         }, ensure_ascii=False)
 
         prompt = ChatPromptTemplate.from_messages([
-            ("system", self.config["system_prompt"]),
+            ("system", self.config["system_prompt"] + "\n只整理已提供的信息，缺失步骤明确标注暂不可用；不得补造医院、价格、医保比例或天气。保留费用参考估算说明。"),
             ("human", "以下是所有信息，请整合成一份完整的就医攻略：\n\n{context}"),
         ])
 
         chain = prompt | self.llm | StrOutputParser()
         result = await chain.ainvoke({"context": context_text})
 
-        title = "就诊攻略"
-        summary = ""
-        guide_sections = []
-        closing_tip = ""
-
-        try:
-            if "{" in result:
-                json_str = result[result.index("{"):result.rindex("}") + 1]
-                data = json.loads(json_str)
-                title = data.get("title", "就诊攻略")
-                summary = data.get("summary", "")
-                guide_sections = data.get("guide_sections", [])
-                closing_tip = data.get("closing_tip", "")
-        except Exception:
-            pass
+        data = parse_result(result, string_fields=("title", "summary", "closing_tip"), list_fields=("guide_sections",))
+        title = data.get("title") or "就诊攻略"
+        summary = data.get("summary", "")
+        guide_sections = data.get("guide_sections", [])
+        closing_tip = data.get("closing_tip", "")
+        if not guide_sections or any(not isinstance(s, dict) or not isinstance(s.get("title"), str)
+                                     or not isinstance(s.get("content"), str) or not s["content"].strip()
+                                     or not isinstance(s.get("icon", ""), str) for s in guide_sections):
+            raise ValueError("invalid guide sections")
 
         return {
             "reply": f"📋 **{title}**\n\n{summary}",
@@ -114,12 +120,44 @@ class SynthesisAgent(BaseAgent):
 class VisitPlannerOrchestrator:
     """就医规划编排器 - 多Agent协作"""
 
-    def __init__(self):
+    def __init__(self, stage_timeout: float = 25):
+        self.stage_timeout = stage_timeout
         self.triage_agent = TriageAgent()
         self.hospital_advisor = HospitalAdvisorAgent()
         self.prep_guide = PrepGuideAgent()
         self.cost_estimator = CostEstimatorAgent()
         self.synthesis_agent = SynthesisAgent()
+
+    async def _run_stage(self, name, operation, fallback, stages, request_id):
+        """独立超时与降级；父请求取消时保留 CancelledError 的传播。"""
+        logger.info("visit_plan_stage request=%s stage=%s state=started", request_id, name)
+        try:
+            value = await asyncio.wait_for(operation(), timeout=self.stage_timeout)
+            stages[name] = "ok"
+            logger.info("visit_plan_stage request=%s stage=%s state=ok", request_id, name)
+            return value
+        except Exception as exc:
+            stages[name] = "timeout" if isinstance(exc, asyncio.TimeoutError) else "failed"
+            logger.warning("visit_plan_stage request=%s stage=%s state=%s error_type=%s",
+                           request_id, name, stages[name], type(exc).__name__)
+            return fallback
+
+    @staticmethod
+    def _fallback_guide(context):
+        """汇总模型失败时直接展示已经成功获取的数据，不再次调用模型。"""
+        triage = context["triage"]["meta_data"]
+        hospitals = context["hospitals"].get("meta_data", {})
+        prep = context["prep"].get("meta_data", {})
+        cost = context["cost"].get("meta_data", {})
+        sections = [
+            {"title": "分诊建议", "content": triage["recommended_department"]},
+            {"title": "医院推荐", "content": hospitals.get("best_choice") or "医院推荐暂不可用"},
+            {"title": "准备清单", "content": prep.get("checklist") or "准备清单暂不可用"},
+            {"title": "费用参考", "content": (cost.get("total_range") or "费用预估暂不可用") + "；" + cost.get("disclaimer", "")},
+            {"title": "出行信息", "content": context.get("travel_advice") or "实时天气暂不可用"},
+        ]
+        return {"reply": "已整理可用信息", "meta_data": {"title": "就诊攻略", "summary": "已整理可用信息，部分步骤暂不可用。",
+                "guide_sections": sections, "closing_tip": triage.get("disclaimer", "")}}
 
     def _find_nearest_city(self, lat: float, lng: float) -> str:
         """根据坐标找到最近的城市"""
@@ -154,7 +192,7 @@ class VisitPlannerOrchestrator:
         多Agent协作生成完整就医攻略
 
         Phase 1: 分诊分析（顺序执行）
-        Phase 2: 并行查询（医院、准备、费用、天气）
+        Phase 2: 医院→费用，与准备和天气并行
         Phase 3: 综合生成攻略
         """
         # 确定城市
@@ -164,15 +202,15 @@ class VisitPlannerOrchestrator:
             city = "武汉"
 
         # ==================== Phase 1: 分诊 ====================
-        triage_context = {"patient_age": patient_age, "patient_gender": patient_gender}
-        triage_result = await self.triage_agent.process(symptoms, triage_context)
+        request_id, stages = uuid4().hex[:16], {}
+        triage_context = {"patient_age": patient_age, "patient_gender": patient_gender, "analysis_only": True}
+        triage_result = await self._run_stage("triage", lambda: self.triage_agent.process(symptoms, triage_context),
+                                            None, stages, request_id)
+        if triage_result is None:
+            raise HTTPException(503, "分诊分析暂不可用，请稍后重试；未生成就医攻略。")
         triage_meta = triage_result.get("meta_data", {})
         department = triage_meta.get("recommended_department", "内科")
         urgency = triage_meta.get("urgency_level", "normal")
-
-        # 获取医院的等级用于费用预估（走 MCP 工具层）
-        hospitals = mcp.search_hospitals(city=city, limit=1)["hospitals"]
-        hospital_rank = hospitals[0]["rank"] if hospitals else "三甲"
 
         # ==================== Phase 2: 并行执行 ====================
         # 所有Agent共享的上下文
@@ -182,39 +220,46 @@ class VisitPlannerOrchestrator:
             "patient_age": patient_age,
             "patient_gender": patient_gender,
             "urgency_level": urgency,
-            "hospital_rank": hospital_rank,
         }
+        empty_cost = {"meta_data": {"disclaimer": "费用预估暂不可用，实际以医院收费为准。"}}
 
-        hospital_task = self.hospital_advisor.process(
-            f"推荐{department}的医院", shared_context
-        )
-        prep_task = self.prep_guide.process(
-            f"准备去{department}就诊", shared_context
-        )
-        cost_task = self.cost_estimator.process(
-            f"预估{department}就诊费用", shared_context
-        )
+        async def hospital_and_cost():
+            hospital = await self._run_stage("hospital", lambda: self.hospital_advisor.process(
+                f"推荐{department}的医院", dict(shared_context)), {"meta_data": {}}, stages, request_id)
+            meta = hospital.get("meta_data", {})
+            # 医院名称、等级与城市从工具查到的详情取，不能使用模型自报等级。
+            names = {r["name"] for r in meta.get("recommended_hospitals", [])}
+            selected = next((h for h in meta.get("hospital_details", [])
+                             if h.get("name") == meta.get("best_choice") and h.get("name") in names), None)
+            if not selected or not selected.get("rank"):
+                stages["cost"] = "skipped"
+                logger.info("visit_plan_stage request=%s stage=cost state=skipped", request_id)
+                return hospital, empty_cost
+            cost_context = dict(shared_context, hospital_name=selected["name"], hospital_rank=selected["rank"],
+                                city=selected.get("city") or city)
+            cost = await self._run_stage("cost", lambda: self.cost_estimator.process(
+                f"预估{department}就诊费用", cost_context), empty_cost, stages, request_id)
+            return hospital, cost
 
         # 天气和出行建议（不调LLM，用 MCP 工具）
         async def get_weather_and_advice():
-            try:
-                weather_data = await mcp.get_weather(city)
-                advice = mcp.get_travel_advice(
-                    condition=weather_data["condition"],
-                    temperature=weather_data["temperature"],
-                    wind=weather_data.get("wind", ""),
-                    dest_name="医院",
-                )["advice"]
-                return weather_data, advice
-            except Exception:
-                return {"condition": "未知", "temperature": 20}, "天气信息获取失败"
-
-        weather_task = get_weather_and_advice()
+            weather_data = await mcp.get_weather(city)
+            if weather_data.get("source") != "realtime":
+                raise ValueError("realtime weather unavailable")
+            advice = mcp.get_travel_advice(
+                condition=weather_data["condition"], temperature=weather_data["temperature"],
+                wind=weather_data.get("wind", ""), dest_name="医院",
+            )["advice"]
+            return weather_data, advice
 
         # 并发执行所有任务
-        hospital_result, prep_result, cost_result, (weather_data, travel_advice) = (
+        (hospital_result, cost_result), prep_result, (weather_data, travel_advice) = (
             await asyncio.gather(
-                hospital_task, prep_task, cost_task, weather_task
+                hospital_and_cost(),
+                self._run_stage("prep", lambda: self.prep_guide.process(f"准备去{department}就诊", dict(shared_context)),
+                                {"meta_data": {}}, stages, request_id),
+                self._run_stage("weather", get_weather_and_advice,
+                                ({"condition": "", "temperature": "", "source": "unavailable"}, "实时天气暂不可用，请出行前确认天气。"), stages, request_id),
             )
         )
 
@@ -224,7 +269,7 @@ class VisitPlannerOrchestrator:
         hospital_meta = hospital_result.get("meta_data", {}) if isinstance(hospital_result, dict) else {}
 
         # ==================== Phase 3: 综合 ====================
-        synthesis_result = await self.synthesis_agent.process(symptoms, {
+        synthesis_context = {
             "triage": triage_result,
             "hospitals": hospital_result,
             "prep": prep_result,
@@ -233,11 +278,16 @@ class VisitPlannerOrchestrator:
             "travel_advice": travel_advice,
             "patient_age": patient_age,
             "patient_gender": patient_gender,
-        })
+            "warnings": [f"{STAGE_LABELS[name]}暂不可用" for name in STAGE_LABELS if stages.get(name) not in {None, "ok"}],
+        }
+        synthesis_result = await self._run_stage("synthesis", lambda: self.synthesis_agent.process(symptoms, synthesis_context),
+                                                 self._fallback_guide(synthesis_context), stages, request_id)
         synthesis_meta = synthesis_result.get("meta_data", {})
 
         # ==================== 组装最终结果 ====================
         return {
+            "planning_status": "partial" if any(state != "ok" for state in stages.values()) else "complete",
+            "warnings": [f"{STAGE_LABELS[name]}暂不可用" for name in STAGE_LABELS if stages.get(name) not in {None, "ok"}],
             "guide_title": synthesis_meta.get("title", "就诊攻略"),
             "guide_summary": synthesis_meta.get("summary", ""),
             "guide_sections": synthesis_meta.get("guide_sections", []),
@@ -254,7 +304,7 @@ class VisitPlannerOrchestrator:
                 "list": hospital_meta.get("hospital_details", []),
                 "recommended": hospital_meta.get("recommended_hospitals", []),
                 "best_choice": hospital_meta.get("best_choice", ""),
-                "city": city,
+                "city": hospital_meta.get("city") or city,
             },
             "prep_guide": {
                 "documents": prep_meta.get("documents", []),
@@ -272,12 +322,16 @@ class VisitPlannerOrchestrator:
                 "companion_fee": cost_meta.get("companion_fee", ""),
                 "breakdown": cost_meta.get("breakdown", []),
                 "disclaimer": cost_meta.get("disclaimer", ""),
+                "hospital_name": cost_meta.get("hospital_name", ""),
+                "hospital_rank": cost_meta.get("hospital_rank", ""),
+                "city": cost_meta.get("city", ""),
             },
             "weather": {
                 "condition": weather_data.get("condition", ""),
                 "temperature": weather_data.get("temperature", ""),
                 "wind": weather_data.get("wind", ""),
                 "humidity": weather_data.get("humidity", ""),
+                "source": weather_data.get("source", "unavailable"),
             },
             "travel_advice": travel_advice,
         }

@@ -1,8 +1,8 @@
 """就诊准备指南 Agent - 根据科室和患者情况提供就医准备清单"""
-import json
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from .base import BaseAgent
+from .results import parse_result
 
 
 class PrepGuideAgent(BaseAgent):
@@ -58,24 +58,15 @@ class PrepGuideAgent(BaseAgent):
             "urgency": urgency,
         })
 
-        # 解析结果
-        documents = []
-        diet_before = ""
-        clothing = ""
-        special_notes = []
-        checklist = ""
-
-        try:
-            if "{" in result:
-                json_str = result[result.index("{"):result.rindex("}") + 1]
-                data = json.loads(json_str)
-                documents = data.get("documents", [])
-                diet_before = data.get("diet_before", "")
-                clothing = data.get("clothing", "")
-                special_notes = data.get("special_notes", [])
-                checklist = data.get("checklist", "")
-        except Exception:
-            pass
+        data = parse_result(result, string_fields=("diet_before", "clothing", "checklist"),
+                            list_fields=("documents", "special_notes"), required_text=("checklist",))
+        documents = data.get("documents", [])
+        diet_before = data.get("diet_before", "")
+        clothing = data.get("clothing", "")
+        special_notes = data.get("special_notes", [])
+        checklist = data["checklist"]
+        if any(not isinstance(item, str) for item in documents + special_notes):
+            raise ValueError("invalid preparation list")
 
         return {
             "reply": f"为您整理了前往 **{department}** 就诊的准备事项：\n\n{checklist}",

@@ -1,9 +1,10 @@
 """医院推荐 Agent - 根据科室和城市推荐最适合的医院与专家"""
-import json
+import asyncio
 from langchain.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from app.mcp import client as mcp
 from .base import BaseAgent
+from .results import parse_result
 
 
 class HospitalAdvisorAgent(BaseAgent):
@@ -33,12 +34,14 @@ class HospitalAdvisorAgent(BaseAgent):
         urgency = (context or {}).get("urgency_level", "normal")
 
         # 1. 查询该城市所有医院（走 MCP 工具层）
-        hospitals = mcp.search_hospitals(city=city, limit=100)["hospitals"]
+        hospitals = (await asyncio.to_thread(mcp.search_hospitals, city=city, limit=100))["hospitals"]
 
         # 2. 如果该城市没医院，扩大到周边或全国
         if not hospitals:
-            hospitals = mcp.search_hospitals(limit=10)["hospitals"]
+            hospitals = (await asyncio.to_thread(mcp.search_hospitals, limit=10))["hospitals"]
             city = "全国"
+        if not hospitals:
+            raise ValueError("no hospital candidates")
 
         # 3. 构建医院数据（精简：只留名称和等级，限前5家）
         hospital_list = "\n".join([
@@ -68,25 +71,23 @@ class HospitalAdvisorAgent(BaseAgent):
         })
 
         # 解析结果
-        recommended = []
-        best_choice = ""
-        summary = ""
-
-        try:
-            if "{" in result:
-                json_str = result[result.index("{"):result.rindex("}") + 1]
-                data = json.loads(json_str)
-                recommended = data.get("recommended_hospitals", [])
-                best_choice = data.get("best_choice", "")
-                summary = data.get("summary", "")
-        except Exception:
-            pass
+        data = parse_result(result, string_fields=("best_choice", "summary"), list_fields=("recommended_hospitals",))
+        recommended = data.get("recommended_hospitals", [])
+        best_choice = data.get("best_choice", "")
+        summary = data.get("summary", "")
 
         # 候选池校验：仅保留数据库中真实存在的医院，避免 LLM 幻觉产生库外医院
-        valid_names = {h["name"] for h in hospitals}
-        recommended = [r for r in recommended if r.get("name") in valid_names]
-        if best_choice and best_choice not in valid_names:
-            best_choice = recommended[0]["name"] if recommended else (hospitals[0]["name"] if hospitals else "")
+        candidates = {}
+        for h in hospitals[:5]:
+            candidates.setdefault(h["name"], h)
+        recommended = [{"name": r["name"], "rank": candidates[r["name"]]["rank"],
+                        "reason": r.get("reason", "") if isinstance(r.get("reason", ""), str) else ""}
+                       for r in recommended if isinstance(r, dict) and isinstance(r.get("name"), str)
+                       and r["name"] in candidates]
+        if not recommended:
+            raise ValueError("no valid hospital recommendation")
+        if best_choice not in {r["name"] for r in recommended}:
+            best_choice = recommended[0]["name"]
 
         # 构建返回的医院数据（带完整信息）
         hospital_details = []
@@ -98,6 +99,7 @@ class HospitalAdvisorAgent(BaseAgent):
                     "id": h["id"],
                     "name": h["name"],
                     "rank": h["rank"] or "",
+                    "city": h.get("city", ""),
                     "label": h["label"] or "",
                     "intro": h["intro"][:100] if h["intro"] else "",
                     "address": h["address"] or "",
